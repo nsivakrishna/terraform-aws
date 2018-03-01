@@ -1,0 +1,41 @@
+
+resource "aws_vpc" "main" {
+  cidr_block = "15.0.0.0/16"
+}
+
+
+# Creating one subnet in each AZ
+resource "aws_subnet" "private" {
+  vpc_id = "${aws_vpc.main.id}"
+  count             = "${length(split(",", var.azs))}"
+  availability_zone = "${element(split(",", var.azs), count.index)}"
+  cidr_block        = "15.123.${count.index}.0/24"
+}
+
+resource "aws_db_subnet_group" "aurora" {
+  name = "phinze-test-db-subnetgroup"
+  description = "it is silly that this is required in the API"
+  subnet_ids = ["${aws_subnet.private.*.id}"]
+}
+
+resource "aws_rds_cluster" "default" {
+  cluster_identifier   = "multiaz-cluster"
+  database_name        = "${var.dbname}"
+  master_username      = "${var.username}"
+  master_password      = "${var.password}"
+  backup_retention_period = 5
+  preferred_backup_window = "11:15-12:15"
+  db_subnet_group_name = "${aws_db_subnet_group.aurora.name}"
+  final_snapshot_identifier = "auroratest-final-ss"
+  vpc_security_group_ids = ["${aws_security_group.aurora-sg.id}"]
+
+}
+
+resource "aws_rds_cluster_instance" "aurora_instance" {
+  count                = 2
+  cluster_identifier   = "${aws_rds_cluster.default.id}"
+  instance_class       = "${var.instance_class}"
+  db_subnet_group_name = "${aws_db_subnet_group.aurora.name}"
+}
+
+
